@@ -1,5 +1,3 @@
-
-
 """Reusable functions for the weather forecast project."""
 
 import pandas as pd
