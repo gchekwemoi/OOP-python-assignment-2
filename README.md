@@ -2,6 +2,7 @@
 
 **Programme:** Master of Science in Data Science  
 **Semester:** Advent 2026
+**Name:** Gloria Chekwemoi
 
 ## Project Overview
 
