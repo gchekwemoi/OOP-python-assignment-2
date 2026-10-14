@@ -1,82 +1,103 @@
-# OOP with Python — Assignment 2
+# Object-Oriented Programming with Python – Assignment 2
 
 **Programme:** Master of Science in Data Science  
-**Semester:** Advent 2026
-**Name:** Gloria Chekwemoi
+**Academic Session:** Advent 2026  
+**Chekwemoi Gloria  
+**GitHub Repository:** https://github.com/gchekwemoi/OOP-python-assignment-2
 
-## Project Overview
 
-This repository contains two Python mini-projects developed for the Object-Oriented Programming with Python course.
+## 1. Introduction
 
-### Mini-Project 1: Weather Forecasting Using Python APIs
+This repository contains two mini-projects developed to demonstrate Object-Oriented Programming (OOP) concepts using Python. The projects focus on solving practical problems through reusable code, modular design, exception handling and testing.
 
-The application retrieves weather forecasts using Open-Meteo and MET Norway APIs.
+## 2. Mini-Project 1: Weather Forecast Application
 
-Main features include:
+The Weather Forecast Application retrieves weather information for selected locations using the Open-Meteo API. It processes JSON responses, interprets weather codes and displays forecast information.
 
-- Geocoding city names into geographical coordinates.
-- Retrieving daily temperature, rainfall and wind speed forecasts.
-- Organising weather information using pandas DataFrames.
-- Creating weather visualisations using Matplotlib.
-- Comparing forecasts from two weather providers.
-- Handling invalid inputs, network failures and API timeouts.
-- Running automated offline tests with pytest.
+The main functions are stored in `src/weather_utils.py`, while `project1_weather_forecast.ipynb` demonstrates their application. Sample JSON files are provided to support offline testing.
 
-### Mini-Project 2: Uganda Tax Engine
+The project covers API integration, input validation, error handling and reusable Python functions.
 
-This mini-project will implement an object-oriented calculator for Ugandan taxes, including PAYE, NSSF, VAT and corporate income tax.
+## 3. Mini-Project 2: Uganda Tax Engine
 
-**Status:** Not yet implemented.
+The Uganda Tax Engine calculates selected taxes and payroll deductions using Python classes.
 
-## Repository Structure
+It includes:
 
-```text
-OOP-python-assignment-2/
-├── project1_weather_forecast.ipynb
-├── src/
-│   └── weather_utils.py
-├── tests/
-│   └── test_weather.py
-├── sample_data/
-│   ├── locations.json
-│   └── forecast.json
-├── requirements.txt
-└── README.md
-```
+- PAYE for resident and non-resident employees.
+- Payroll calculations covering NSSF, annual LST and net salary.
+- VAT calculations for standard-rated, zero-rated and exempt supplies.
+- Corporate Income Tax at the configured standard rate of 30%.
+- TaxPlanner for comparing two tax scenarios.
 
-## Setup and Execution
+The `Money` class uses `Decimal` to improve the reliability of financial calculations. The abstract `Tax` class provides a common calculation interface, demonstrating inheritance and polymorphism.
 
-1. Open the Jupyter Notebook in Google Colab.
-2. Install the dependencies listed in `requirements.txt` if necessary.
-3. In the notebook configuration cell, specify the city, forecast days and a genuine contact email for MET Norway.
-4. Run the notebook from top to bottom.
-5. Review the forecast tables, charts and weather comparison.
+The `PayrollCalculator` and `TaxPlanner` reuse existing tax classes, demonstrating composition.
 
-An internet connection is required for live API requests. The automated parsing tests use saved JSON data and can run offline.
+### Interactive User Interface
 
-## Testing
+I used **`ipywidgets`** to develop simple interactive calculators within Google Colab. This library provides text fields, dropdown menus, checkboxes and buttons.
 
-Run the tests from the repository's main directory:
+I selected it because it works within Jupyter notebooks, does not require building a separate website and allows users to enter their own figures without changing the Python code.
+
+The interface is separate from the calculation logic. It passes the user's inputs to the OOP classes and displays the results.
+
+The interactive tools are demonstrated in `project2_uganda_tax_engine.ipynb`.
+
+## 4. Tools and Libraries
+
+| Tool/Library | Purpose |
+|---|---|
+| Python | Main programming language |
+| Google Colab | Development and demonstrations |
+| GitHub | Code storage and version control |
+| Open-Meteo API | Weather forecast data |
+| `Decimal` | Monetary calculations |
+| `pandas` | Tabular results |
+| `matplotlib` | Data visualisation |
+| `ipywidgets` | Interactive tax calculator interfaces |
+| `pytest` | Automated testing |
+| `Hypothesis` | Property-based testing |
+| GitHub Actions | Automatic test execution |
+
+## 5. How to Run the Projects
+
+Open either notebook in Google Colab:
+
+- `project1_weather_forecast.ipynb`
+- `project2_uganda_tax_engine.ipynb`
+
+The notebooks include setup instructions for loading the repository and installing required libraries. Run the cells in order.
+
+For the Uganda Tax Engine, users can enter their own figures in the interactive calculators and click the relevant calculation button.
+
+Automated tests can be run using:
 
 ```bash
 python -m pytest tests/ -v
 ```
 
-The weather project includes five tests covering location parsing, empty and missing results, weather-code descriptions and forecast-data parsing.
+## 6. Challenges and Lessons Learned
 
-## Summary of Findings
+During development, I encountered errors involving imports, tax calculation methods and differences between the code and test files. GitHub Actions helped identify these problems and verify the corrections.
 
-The weather application successfully retrieved forecasts for Kampala, Uganda, from Open-Meteo and MET Norway.
+I also learned the importance of using `Decimal` for money, organising calculations into reusable classes and separating the user interface from the underlying tax logic.
 
-The two providers produced different temperature predictions on some dates, demonstrating that forecast results can vary between providers. These differences do not establish which provider is more accurate without comparison against observed weather data.
+## 7. Limitations
 
-The project also demonstrated how exception handling, request retries and offline testing improve application reliability.
+The Weather Forecast Application depends on external API availability.
 
-## Data Sources
+The Uganda Tax Engine is an educational demonstration and does not cover every statutory requirement. In particular, the payroll model assumes annual LST is deducted once in July, while the VAT and corporate tax modules use simplified assumptions. The calculations should be verified against applicable legislation before real-world use.
 
-- Open-Meteo: https://open-meteo.com/
-- MET Norway: https://api.met.no/
+## 8. AI-Use Declaration
 
-## AI Use Declaration
+I used ChatGPT to assist with understanding OOP concepts, developing and explaining code, identifying errors, preparing tests and improving documentation.
 
-AI assistance was used to explain programming concepts, suggest code structures, support debugging, develop test examples and improve documentation. The code was executed and tested using Google Colab and GitHub. I remain responsible for understanding, verifying and explaining the submitted work.
+I used GitHub Actions and Google Colab to test and demonstrate the code. The project includes the Python modules, automated tests and notebooks used during development.
+
+## 9. References
+
+- Open-Meteo. (n.d.). *Weather forecast API*. https://open-meteo.com/en/docs
+- Python Software Foundation. (n.d.). *Python documentation*. https://docs.python.org/3/
+- Project Jupyter. (n.d.). *Jupyter widgets documentation*. https://ipywidgets.readthedocs.io/
+- Uganda Revenue Authority. (n.d.). *Official tax information*. https://ura.go.ug/
