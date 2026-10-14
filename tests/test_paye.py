@@ -1,6 +1,8 @@
 
 """Automated tests for Uganda PAYE calculations."""
 
+from hypothesis import given, settings, strategies as st
+
 from datetime import date
 from decimal import Decimal
 
@@ -129,3 +131,60 @@ def test_tax_monotonic():
     taxes = [calculate_paye(x) for x in incomes]
 
     assert taxes == sorted(taxes)
+
+
+# PROPERTY-BASED TESTS USING HYPOTHESIS
+
+
+@given(
+    income=st.integers(
+        min_value=0,
+        max_value=100_000_000
+    )
+)
+@settings(max_examples=100)
+def test_paye_never_negative(income):
+    """PAYE must never be negative."""
+
+    tax = calculate_paye(str(income))
+
+    assert tax >= Decimal("0")
+
+
+@given(
+    income=st.integers(
+        min_value=0,
+        max_value=100_000_000
+    )
+)
+@settings(max_examples=100)
+def test_paye_never_exceeds_income(income):
+    """PAYE must not exceed taxable income."""
+
+    tax = calculate_paye(str(income))
+
+    assert tax <= Decimal(income)
+
+
+@given(
+    income1=st.integers(
+        min_value=0,
+        max_value=100_000_000
+    ),
+    income2=st.integers(
+        min_value=0,
+        max_value=100_000_000
+    )
+)
+@settings(max_examples=100)
+def test_paye_monotonic_property(income1, income2):
+    """Higher income must not produce lower PAYE."""
+
+    lower_income = min(income1, income2)
+    higher_income = max(income1, income2)
+
+    lower_tax = calculate_paye(str(lower_income))
+    higher_tax = calculate_paye(str(higher_income))
+
+    assert higher_tax >= lower_tax
+
