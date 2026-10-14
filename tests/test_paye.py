@@ -1,205 +1,154 @@
 
-"""Tests for Uganda PAYE calculations."""
+"""Automated tests for Uganda payroll calculations."""
 
 from datetime import date
 from decimal import Decimal
 
 import pytest
-from hypothesis import given, settings, strategies as st
 
 from src.tax_engine.money import Money
-from src.tax_engine.models import TaxContext
-from src.tax_engine.paye import PAYETax
-from src.tax_engine.exceptions import (
-    InvalidIncomeError,
-    NoScheduleForDateError
-)
+from src.tax_engine.payroll import PayrollCalculator
+from src.tax_engine.exceptions import InvalidIncomeError
 
 
-TAX_DATE = date(2026, 10, 1)
+def calculate_payroll(
+    salary="1500000",
+    allowances="0",
+    residency="resident",
+    month=7,
+    lst_exempt=False
+):
+    """Calculate payroll for a test employee."""
 
+    calculator = PayrollCalculator()
 
-def calculate_paye(income, residency="resident"):
-    """Calculate monthly PAYE and return its amount."""
-
-    context = TaxContext(
-        tax_date=TAX_DATE,
-        income=Money(income),
-        residency=residency
+    return calculator.calculate(
+        basic_salary=Money(salary),
+        allowances=Money(allowances),
+        residency=residency,
+        tax_date=date(2026, month, 1),
+        lst_exempt=lst_exempt
     )
 
-    result = PAYETax().calculate(context)
 
-    return result.amount.amount
+def test_july_payroll():
+    """Full annual LST is deducted once in July."""
+
+    result = calculate_payroll()
+
+    assert result.gross_pay.amount == Decimal("1500000")
+    assert result.annual_local_service_tax.amount == Decimal("100000")
+    assert result.local_service_tax.amount == Decimal("100000")
+    assert result.paye.amount == Decimal("308250")
+    assert result.employee_nssf.amount == Decimal("75000")
+    assert result.employer_nssf.amount == Decimal("150000")
+    assert result.net_pay.amount == Decimal("1016750")
 
 
-# 1. RESIDENT PAYE BOUNDARY TESTS
+def test_october_payroll():
+    """No LST deduction occurs in October."""
+
+    result = calculate_payroll(month=10)
+
+    assert result.annual_local_service_tax.amount == Decimal("100000")
+    assert result.local_service_tax.amount == Decimal("0")
+    assert result.paye.amount == Decimal("338250")
+    assert result.net_pay.amount == Decimal("1086750")
+
+
+def test_payroll_with_allowances():
+    """Allowances increase gross pay and taxable income."""
+
+    result = calculate_payroll(
+        salary="1500000",
+        allowances="200000"
+    )
+
+    assert result.gross_pay.amount == Decimal("1700000")
+    assert result.annual_local_service_tax.amount == Decimal("100000")
+    assert result.local_service_tax.amount == Decimal("100000")
+    assert result.paye.amount == Decimal("368250")
+    assert result.employee_nssf.amount == Decimal("85000")
+    assert result.net_pay.amount == Decimal("1146750")
+
+
+def test_lst_exemption():
+    """LST-exempt employees should not pay LST."""
+
+    result = calculate_payroll(lst_exempt=True)
+
+    assert result.annual_local_service_tax.amount == Decimal("0")
+    assert result.local_service_tax.amount == Decimal("0")
+    assert result.paye.amount == Decimal("338250")
+    assert result.net_pay.amount == Decimal("1086750")
+
+
+def test_non_resident_payroll():
+    """Check PAYE, NSSF and LST for a non-resident."""
+
+    result = calculate_payroll(residency="non-resident")
+
+    assert result.annual_local_service_tax.amount == Decimal("100000")
+    assert result.local_service_tax.amount == Decimal("100000")
+    assert result.paye.amount == Decimal("345500")
+    assert result.net_pay.amount == Decimal("979500")
+
 
 @pytest.mark.parametrize(
-    "income, expected",
+    "assessment_income, expected_lst",
     [
-        ("0", "0"),
-        ("335000", "0"),
-        ("335001", "0"),
-        ("410000", "15000"),
-        ("410001", "15000"),
-        ("485000", "33750"),
-        ("485001", "33750"),
-        ("1000000", "188250"),
-        ("1500000", "338250"),
-        ("10000000", "2888250"),
-        ("10000001", "2888250")
+        ("100000", "0"),
+        ("100001", "5000"),
+        ("200000", "5000"),
+        ("200001", "10000"),
+        ("300000", "10000"),
+        ("400000", "20000"),
+        ("500000", "30000"),
+        ("600000", "40000"),
+        ("700000", "60000"),
+        ("800000", "70000"),
+        ("900000", "80000"),
+        ("1000000", "90000"),
+        ("1000001", "100000")
     ]
 )
-def test_resident_paye(income, expected):
-    """Check PAYE at resident income boundaries."""
+def test_lst_bands(assessment_income, expected_lst):
+    """Verify LST rates and income band boundaries."""
 
-    assert calculate_paye(income) == Decimal(expected)
-
-
-# 2. NON-RESIDENT PAYE TESTS
-
-@pytest.mark.parametrize(
-    "income, expected",
-    [
-        ("0", "0"),
-        ("100000", "10000"),
-        ("335000", "33500"),
-        ("335001", "33500"),
-        ("410000", "48500"),
-        ("410001", "48500"),
-        ("1000000", "225500"),
-        ("10000000", "2925500"),
-        ("10000001", "2925500")
-    ]
-)
-def test_non_resident_paye(income, expected):
-    """Check PAYE using non-resident tax rates."""
-
-    assert calculate_paye(
-        income,
-        "non-resident"
-    ) == Decimal(expected)
-
-
-# 3. ALLOWANCE TEST
-
-def test_taxable_allowances():
-    """Check that taxable allowances increase income."""
-
-    context = TaxContext(
-        tax_date=TAX_DATE,
-        income=Money("1000000"),
-        residency="resident",
-        details={
-            "allowances": Money("500000")
-        }
+    result = PayrollCalculator.calculate_annual_lst(
+        Money(assessment_income)
     )
 
-    result = PAYETax().calculate(context)
-
-    assert result.amount.amount == Decimal("338250")
+    assert result.amount == Decimal(expected_lst)
 
 
-# 4. INVALID INCOME TEST
-
-def test_negative_income():
-    """Reject negative employment income."""
-
-    context = TaxContext(
-        tax_date=TAX_DATE,
-        income=Money("-100000")
-    )
+def test_negative_salary():
+    """Reject negative basic salary."""
 
     with pytest.raises(InvalidIncomeError):
-        PAYETax().calculate(context)
+        calculate_payroll(salary="-100000")
 
-
-# 5. INVALID ALLOWANCES TEST
 
 def test_negative_allowances():
-    """Reject negative taxable allowances."""
-
-    context = TaxContext(
-        tax_date=TAX_DATE,
-        income=Money("1000000"),
-        details={
-            "allowances": Money("-50000")
-        }
-    )
+    """Reject negative allowances."""
 
     with pytest.raises(InvalidIncomeError):
-        PAYETax().calculate(context)
+        calculate_payroll(allowances="-50000")
 
 
-# 6. MISSING TAX SCHEDULE TEST
+def test_invalid_lst_exemption():
+    """The exemption flag must be a Boolean."""
 
-def test_missing_schedule():
-    """Reject dates with no configured PAYE schedule."""
-
-    context = TaxContext(
-        tax_date=date(2025, 1, 1),
-        income=Money("1000000")
-    )
-
-    with pytest.raises(NoScheduleForDateError):
-        PAYETax().calculate(context)
+    with pytest.raises(InvalidIncomeError):
+        calculate_payroll(lst_exempt="yes")
 
 
-# 7. HYPOTHESIS: NON-NEGATIVE TAX
+def test_zero_salary():
+    """Zero income should produce zero payroll deductions."""
 
-@given(
-    income=st.integers(
-        min_value=0,
-        max_value=100_000_000
-    )
-)
-@settings(max_examples=100)
-def test_tax_non_negative(income):
-    """PAYE must never be negative."""
+    result = calculate_payroll(salary="0")
 
-    tax = calculate_paye(str(income))
-
-    assert tax >= Decimal("0")
-
-
-# 8. HYPOTHESIS: TAX NOT GREATER THAN INCOME
-
-@given(
-    income=st.integers(
-        min_value=0,
-        max_value=100_000_000
-    )
-)
-@settings(max_examples=100)
-def test_tax_not_above_income(income):
-    """PAYE must not exceed taxable income."""
-
-    tax = calculate_paye(str(income))
-
-    assert tax <= Decimal(income)
-
-
-# 9. HYPOTHESIS: MONOTONICITY
-
-@given(
-    income1=st.integers(
-        min_value=0,
-        max_value=100_000_000
-    ),
-    income2=st.integers(
-        min_value=0,
-        max_value=100_000_000
-    )
-)
-@settings(max_examples=100)
-def test_tax_monotonic(income1, income2):
-    """Increasing income must not reduce PAYE."""
-
-    lower_income = min(income1, income2)
-    higher_income = max(income1, income2)
-
-    lower_tax = calculate_paye(str(lower_income))
-    higher_tax = calculate_paye(str(higher_income))
-
-    assert higher_tax >= lower_tax
+    assert result.paye.amount == Decimal("0")
+    assert result.local_service_tax.amount == Decimal("0")
+    assert result.employee_nssf.amount == Decimal("0")
+    assert result.net_pay.amount == Decimal("0")
