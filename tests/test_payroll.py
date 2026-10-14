@@ -26,7 +26,7 @@ def calculate_payroll(
         basic_salary=Money(salary),
         allowances=Money(allowances),
         residency=residency,
-        tax_date=date(2026, month, 1),
+        tax_date=date(2026 if month >= 7 else 2027, month, 1),
         lst_exempt=lst_exempt
     )
 
