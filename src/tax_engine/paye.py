@@ -1,184 +1,123 @@
 
-"""Payroll calculations for the Uganda Tax Engine."""
+"""PAYE calculations for the Uganda Tax Engine."""
 
-from dataclasses import dataclass
-from datetime import date
 from decimal import Decimal
 
 from .money import Money
-from .models import TaxContext
-from .paye import PAYETax
+from .models import Tax, TaxContext, TaxResult
+from .schedules import get_paye_schedule
 from .exceptions import InvalidIncomeError
 
 
-@dataclass
-class PayrollResult:
-    """Store the results of an employee's payroll."""
+class PAYETax(Tax):
+    """Calculate monthly PAYE for resident and non-resident employees."""
 
-    gross_pay: Money
-    paye: Money
-    employee_nssf: Money
-    employer_nssf: Money
-    local_service_tax: Money
-    annual_local_service_tax: Money
-    net_pay: Money
+    def calculate(self, ctx: TaxContext) -> TaxResult:
+        """Calculate PAYE using the applicable tax schedule."""
 
-
-class PayrollCalculator:
-    """Calculate PAYE, NSSF, annual LST and net salary."""
-
-    EMPLOYEE_NSSF_RATE = Decimal("0.05")
-    EMPLOYER_NSSF_RATE = Decimal("0.10")
-
-    # Monthly assessment income limits and annual LST (UGX).
-    LST_BANDS = [
-        (Decimal("100000"), Decimal("0")),
-        (Decimal("200000"), Decimal("5000")),
-        (Decimal("300000"), Decimal("10000")),
-        (Decimal("400000"), Decimal("20000")),
-        (Decimal("500000"), Decimal("30000")),
-        (Decimal("600000"), Decimal("40000")),
-        (Decimal("700000"), Decimal("60000")),
-        (Decimal("800000"), Decimal("70000")),
-        (Decimal("900000"), Decimal("80000")),
-        (Decimal("1000000"), Decimal("90000")),
-    ]
-
-    @classmethod
-    def calculate_annual_lst(cls, assessment_income: Money) -> Money:
-        """Determine annual LST from monthly assessment income."""
-
-        if not isinstance(assessment_income, Money):
+        # Step 1: Validate income
+        if not isinstance(ctx.income, Money):
             raise InvalidIncomeError(
-                "LST assessment income must be a Money object."
+                "Income must be a Money object."
             )
 
-        if assessment_income.amount < 0:
+        if ctx.income.amount < 0:
             raise InvalidIncomeError(
-                "LST assessment income cannot be negative."
+                "Income cannot be negative."
             )
 
-        for income_limit, annual_tax in cls.LST_BANDS:
-            if assessment_income.amount <= income_limit:
-                return Money(annual_tax)
-
-        return Money("100000")
-
-    def calculate(
-        self,
-        basic_salary: Money,
-        allowances: Money,
-        residency: str,
-        tax_date: date,
-        lst_exempt: bool = False
-    ) -> PayrollResult:
-        """Calculate monthly payroll with LST paid once in July."""
-
-        # Validate salary and allowances
-        if not isinstance(basic_salary, Money):
-            raise InvalidIncomeError(
-                "Basic salary must be a Money object."
-            )
+        # Step 2: Get taxable allowances
+        allowances = ctx.details.get(
+            "allowances",
+            Money("0")
+        )
 
         if not isinstance(allowances, Money):
             raise InvalidIncomeError(
                 "Allowances must be a Money object."
             )
 
-        if basic_salary.amount < 0 or allowances.amount < 0:
+        if allowances.amount < 0:
             raise InvalidIncomeError(
-                "Salary and allowances cannot be negative."
+                "Allowances cannot be negative."
             )
 
-        if not isinstance(lst_exempt, bool):
-            raise InvalidIncomeError(
-                "lst_exempt must be True or False."
-            )
+        # Step 3: Calculate taxable income
+        taxable_income = ctx.income + allowances
+        income = taxable_income.amount
 
-        # Calculate gross salary
-        gross_pay = basic_salary + allowances
-
-        # Create the PAYE calculator
-        paye_calculator = PAYETax()
-
-        # Calculate initial PAYE to assess LST band
-        initial_context = TaxContext(
-            tax_date=tax_date,
-            income=gross_pay,
-            residency=residency
+        # Step 4: Retrieve the applicable PAYE schedule
+        schedule = get_paye_schedule(
+            ctx.tax_date,
+            ctx.residency
         )
 
-        initial_paye = paye_calculator.calculate(
-            initial_context
-        ).amount
+        # Step 5: Calculate PAYE
+        if schedule.residency == "resident":
 
-        # Monthly income used to determine annual LST
-        assessment_income = Money(
-            gross_pay.amount - initial_paye.amount
-        )
+            if income <= schedule.threshold_1:
+                base_tax = Decimal("0")
 
-        # Determine annual LST liability
-        if lst_exempt:
-            annual_lst = Money("0")
+            elif income <= schedule.threshold_2:
+                base_tax = (
+                    (income - schedule.threshold_1)
+                    * schedule.rate_1
+                )
+
+            elif income <= schedule.threshold_3:
+                base_tax = (
+                    schedule.base_tax_2
+                    + (income - schedule.threshold_2)
+                    * schedule.rate_2
+                )
+
+            else:
+                base_tax = (
+                    schedule.base_tax_3
+                    + (income - schedule.threshold_3)
+                    * schedule.rate_3
+                )
+
         else:
-            annual_lst = self.calculate_annual_lst(
-                assessment_income
-            )
+            # Non-resident PAYE
+            if income <= schedule.threshold_2:
+                base_tax = income * schedule.rate_1
 
-        # Deduct the full annual LST once in July
-        if tax_date.month == 7:
-            monthly_lst = annual_lst
+            elif income <= schedule.threshold_3:
+                base_tax = (
+                    schedule.base_tax_2
+                    + (income - schedule.threshold_2)
+                    * schedule.rate_2
+                )
+
+            else:
+                base_tax = (
+                    schedule.base_tax_3
+                    + (income - schedule.threshold_3)
+                    * schedule.rate_3
+                )
+
+        # Step 6: Calculate additional tax above UGX 10 million
+        if income > schedule.surcharge_threshold:
+            surcharge = (
+                (income - schedule.surcharge_threshold)
+                * schedule.surcharge_rate
+            )
         else:
-            monthly_lst = Money("0")
+            surcharge = Decimal("0")
 
-        # Adjust PAYE taxable income for LST paid
-        taxable_pay = Money(
-            max(
-                Decimal("0"),
-                gross_pay.amount - monthly_lst.amount
-            )
-        )
+        # Step 7: Calculate total PAYE
+        total_paye = base_tax + surcharge
 
-        # Calculate final PAYE
-        paye_context = TaxContext(
-            tax_date=tax_date,
-            income=taxable_pay,
-            residency=residency
-        )
-
-        paye = paye_calculator.calculate(
-            paye_context
-        ).amount
-
-        # Calculate NSSF contributions
-        employee_nssf = (
-            gross_pay * self.EMPLOYEE_NSSF_RATE
-        )
-
-        employer_nssf = (
-            gross_pay * self.EMPLOYER_NSSF_RATE
-        )
-
-        # Calculate take-home salary
-        net_pay = Money(
-            gross_pay.amount
-            - paye.amount
-            - employee_nssf.amount
-            - monthly_lst.amount
-        )
-
-        if net_pay.amount < 0:
-            raise InvalidIncomeError(
-                "Total deductions exceed gross salary."
-            )
-
-        # Return payroll results
-        return PayrollResult(
-            gross_pay=gross_pay,
-            paye=paye,
-            employee_nssf=employee_nssf,
-            employer_nssf=employer_nssf,
-            local_service_tax=monthly_lst,
-            annual_local_service_tax=annual_lst,
-            net_pay=net_pay
+        # Step 8: Return results
+        return TaxResult(
+            tax_name="PAYE",
+            amount=Money(total_paye),
+            breakdown={
+                "taxable_income": taxable_income,
+                "residency": schedule.residency,
+                "base_paye": Money(base_tax),
+                "surcharge": Money(surcharge),
+                "tax_date": ctx.tax_date
+            }
         )
