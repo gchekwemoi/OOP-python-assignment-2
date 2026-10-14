@@ -91,10 +91,7 @@ The Uganda Tax Engine is an educational demonstration and does not cover every s
 
 ## 8. AI-Use Declaration
 
-I used ChatGPT to assist with understanding OOP concepts, developing and explaining code, identifying errors, preparing tests and improving documentation.
-
-I used GitHub Actions and Google Colab to test and demonstrate the code. The project includes the Python modules, automated tests and notebooks used during development.
-
+I used ai to support code development, debugging, testing and documentation. I reviewed and tested the suggested solutions using Google Colab and GitHub Actions. I take full responsibility for the submitted work, including its accuracy, errors and limitations.
 ## 9. References
 
 - Open-Meteo. (n.d.). *Weather forecast API*. https://open-meteo.com/en/docs
