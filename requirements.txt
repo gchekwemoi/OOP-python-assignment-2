@@ -4,4 +4,4 @@ pandas
 matplotlib
 pytest
 hypothesis
-
+ipywidgets
