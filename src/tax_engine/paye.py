@@ -45,64 +45,72 @@ class PAYETax(Tax):
         taxable_income = ctx.income + allowances
         income = taxable_income.amount
 
-        # Step 4: Select the appropriate PAYE schedule
+        # Step 4: Select PAYE schedule
         schedule = get_paye_schedule(
             ctx.tax_date,
             ctx.residency
         )
 
         # Step 5: Apply progressive tax bands
-        if income <= schedule.threshold_1:
-            tax = income * (
-                Decimal("0")
-                if schedule.residency == "resident"
-                else schedule.rate_1
-            )
 
-        elif income <= schedule.threshold_2:
-            if schedule.residency == "resident":
+        if schedule.residency == "resident":
+
+            # Resident PAYE
+            if income <= schedule.threshold_1:
+                tax = Decimal("0")
+
+            elif income <= schedule.threshold_2:
                 tax = (
                     income - schedule.threshold_1
                 ) * schedule.rate_1
-            else:
+
+            elif income <= schedule.threshold_3:
                 tax = (
-                    schedule.threshold_2 * schedule.rate_1
+                    schedule.base_tax_2
                     + (income - schedule.threshold_2)
                     * schedule.rate_2
                 )
 
-        elif income <= schedule.threshold_3:
-            if schedule.residency == "resident":
-                tax = (
-                    schedule.base_tax_2
-                    + (income - schedule.threshold_2)
-                    * schedule.rate_2
-                )
             else:
                 tax = (
-                    schedule.base_tax_2
-                    + (income - schedule.threshold_2)
-                    * schedule.rate_2
+                    schedule.base_tax_3
+                    + (income - schedule.threshold_3)
+                    * schedule.rate_3
                 )
 
         else:
-            tax = (
-                schedule.base_tax_3
-                + (income - schedule.threshold_3)
-                * schedule.rate_3
-            )
+
+            # Non-resident PAYE
+            if income <= schedule.threshold_2:
+                tax = income * schedule.rate_1
+
+            elif income <= schedule.threshold_3:
+                tax = (
+                    schedule.base_tax_2
+                    + (income - schedule.threshold_2)
+                    * schedule.rate_2
+                )
+
+            else:
+                tax = (
+                    schedule.base_tax_3
+                    + (income - schedule.threshold_3)
+                    * schedule.rate_3
+                )
 
         # Step 6: Apply high-income surcharge
         if income > schedule.surcharge_threshold:
+
             surcharge = (
                 income - schedule.surcharge_threshold
             ) * schedule.surcharge_rate
 
             tax += surcharge
+
         else:
             surcharge = Decimal("0")
 
-        # Step 7: Return the result
+        # Step 7: Return calculated PAYE
         return TaxResult(
             tax_name="PAYE",
             amount=Money(tax),
