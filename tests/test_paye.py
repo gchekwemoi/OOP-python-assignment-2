@@ -1,12 +1,11 @@
 
-"""Automated tests for Uganda PAYE calculations."""
-
-from hypothesis import given, settings, strategies as st
+"""Tests for Uganda PAYE calculations."""
 
 from datetime import date
 from decimal import Decimal
 
 import pytest
+from hypothesis import given, settings, strategies as st
 
 from src.tax_engine.money import Money
 from src.tax_engine.models import TaxContext
@@ -21,7 +20,7 @@ TAX_DATE = date(2026, 10, 1)
 
 
 def calculate_paye(income, residency="resident"):
-    """Calculate PAYE for a given monthly income."""
+    """Calculate monthly PAYE and return its amount."""
 
     context = TaxContext(
         tax_date=TAX_DATE,
@@ -29,10 +28,13 @@ def calculate_paye(income, residency="resident"):
         residency=residency
     )
 
-    return PAYETax().calculate(context).amount.amount
+    result = PAYETax().calculate(context)
+
+    return result.amount.amount
 
 
-# Test resident PAYE at important boundaries
+# 1. RESIDENT PAYE BOUNDARY TESTS
+
 @pytest.mark.parametrize(
     "income, expected",
     [
@@ -40,7 +42,9 @@ def calculate_paye(income, residency="resident"):
         ("335000", "0"),
         ("335001", "0"),
         ("410000", "15000"),
+        ("410001", "15000"),
         ("485000", "33750"),
+        ("485001", "33750"),
         ("1000000", "188250"),
         ("1500000", "338250"),
         ("10000000", "2888250"),
@@ -48,93 +52,101 @@ def calculate_paye(income, residency="resident"):
     ]
 )
 def test_resident_paye(income, expected):
-    """Verify PAYE at selected income thresholds."""
+    """Check PAYE at resident income boundaries."""
 
     assert calculate_paye(income) == Decimal(expected)
 
 
-# Test non-resident PAYE
+# 2. NON-RESIDENT PAYE TESTS
+
 @pytest.mark.parametrize(
     "income, expected",
     [
         ("0", "0"),
+        ("100000", "10000"),
         ("335000", "33500"),
-        ("410000", "48500")
+        ("335001", "33500"),
+        ("410000", "48500"),
+        ("410001", "48500"),
+        ("1000000", "225500"),
+        ("10000000", "2925500"),
+        ("10000001", "2925500")
     ]
 )
 def test_non_resident_paye(income, expected):
+    """Check PAYE using non-resident tax rates."""
 
     assert calculate_paye(
-        income, "non-resident"
+        income,
+        "non-resident"
     ) == Decimal(expected)
 
 
-# Test invalid income
-def test_negative_income():
+# 3. ALLOWANCE TEST
+
+def test_taxable_allowances():
+    """Check that taxable allowances increase income."""
 
     context = TaxContext(
         tax_date=TAX_DATE,
-        income=Money("-100000"),
-        residency="resident"
+        income=Money("1000000"),
+        residency="resident",
+        details={
+            "allowances": Money("500000")
+        }
+    )
+
+    result = PAYETax().calculate(context)
+
+    assert result.amount.amount == Decimal("338250")
+
+
+# 4. INVALID INCOME TEST
+
+def test_negative_income():
+    """Reject negative employment income."""
+
+    context = TaxContext(
+        tax_date=TAX_DATE,
+        income=Money("-100000")
     )
 
     with pytest.raises(InvalidIncomeError):
         PAYETax().calculate(context)
 
 
-# Test unsupported schedule date
+# 5. INVALID ALLOWANCES TEST
+
+def test_negative_allowances():
+    """Reject negative taxable allowances."""
+
+    context = TaxContext(
+        tax_date=TAX_DATE,
+        income=Money("1000000"),
+        details={
+            "allowances": Money("-50000")
+        }
+    )
+
+    with pytest.raises(InvalidIncomeError):
+        PAYETax().calculate(context)
+
+
+# 6. MISSING TAX SCHEDULE TEST
+
 def test_missing_schedule():
+    """Reject dates with no configured PAYE schedule."""
 
     context = TaxContext(
         tax_date=date(2025, 1, 1),
-        income=Money("1000000"),
-        residency="resident"
+        income=Money("1000000")
     )
 
     with pytest.raises(NoScheduleForDateError):
         PAYETax().calculate(context)
 
 
-# Test non-negative tax
-@pytest.mark.parametrize(
-    "income",
-    ["0", "335000", "1000000", "5000000"]
-)
-def test_tax_non_negative(income):
-
-    assert calculate_paye(income) >= Decimal("0")
-
-
-# Test tax never exceeds income
-@pytest.mark.parametrize(
-    "income",
-    ["100000", "500000", "1500000", "10000000"]
-)
-def test_tax_not_above_income(income):
-
-    assert calculate_paye(income) <= Decimal(income)
-
-
-# Test monotonicity
-def test_tax_monotonic():
-
-    incomes = [
-        "0",
-        "335000",
-        "410000",
-        "485000",
-        "1000000",
-        "5000000",
-        "10000000"
-    ]
-
-    taxes = [calculate_paye(x) for x in incomes]
-
-    assert taxes == sorted(taxes)
-
-
-# PROPERTY-BASED TESTS USING HYPOTHESIS
-
+# 7. HYPOTHESIS: NON-NEGATIVE TAX
 
 @given(
     income=st.integers(
@@ -143,7 +155,7 @@ def test_tax_monotonic():
     )
 )
 @settings(max_examples=100)
-def test_paye_never_negative(income):
+def test_tax_non_negative(income):
     """PAYE must never be negative."""
 
     tax = calculate_paye(str(income))
@@ -151,6 +163,8 @@ def test_paye_never_negative(income):
     assert tax >= Decimal("0")
 
 
+# 8. HYPOTHESIS: TAX NOT GREATER THAN INCOME
+
 @given(
     income=st.integers(
         min_value=0,
@@ -158,13 +172,15 @@ def test_paye_never_negative(income):
     )
 )
 @settings(max_examples=100)
-def test_paye_never_exceeds_income(income):
+def test_tax_not_above_income(income):
     """PAYE must not exceed taxable income."""
 
     tax = calculate_paye(str(income))
 
     assert tax <= Decimal(income)
 
+
+# 9. HYPOTHESIS: MONOTONICITY
 
 @given(
     income1=st.integers(
@@ -177,8 +193,8 @@ def test_paye_never_exceeds_income(income):
     )
 )
 @settings(max_examples=100)
-def test_paye_monotonic_property(income1, income2):
-    """Higher income must not produce lower PAYE."""
+def test_tax_monotonic(income1, income2):
+    """Increasing income must not reduce PAYE."""
 
     lower_income = min(income1, income2)
     higher_income = max(income1, income2)
@@ -187,4 +203,3 @@ def test_paye_monotonic_property(income1, income2):
     higher_tax = calculate_paye(str(higher_income))
 
     assert higher_tax >= lower_tax
-
